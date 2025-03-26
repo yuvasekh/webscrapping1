@@ -1,0 +1,45 @@
+[
+    {
+      "id": 1,
+      "name": "Running Shoes",
+      "price": 1500,
+      "image": "https://images.unsplash.com/photo-1524492412937-b28074a5d7da?w=500",
+      "reviews": []
+    },
+    {
+      "id": 2,
+      "name": "Casual Sneakers",
+      "price": 1800,
+      "image": "https://images.unsplash.com/photo-1549298916-b41d501d3772?w=500",
+      "reviews": []
+    },
+    {
+      "id": 3,
+      "name": "Men's Sports Shorts",
+      "price": 700,
+      "image": "https://images.unsplash.com/photo-1613412008137-0d4d43807b15?w=500",
+      "reviews": []
+    },
+    {
+      "id": 4,
+      "name": "Women's Yoga Pants",
+      "price": 1200,
+      "image": "https://images.unsplash.com/photo-1593079831268-3381b0db4a77?w=500",
+      "reviews": []
+    },
+    {
+      "id": 5,
+      "name": "Wireless Headphones",
+      "price": 2500,
+      "image": "https://images.unsplash.com/photo-1512314889357-e157c22f938d?w=500",
+      "reviews": []
+    },
+    {
+      "id": 6,
+      "name": "Smart Watch",
+      "price": 3500,
+      "image": "https://images.unsplash.com/photo-1546456073-6712f79251bb?w=500",
+      "reviews": []
+    }
+  ]
+  

@@ -1,0 +1,58 @@
+[
+  {
+    "id": 1,
+    "productId": "2",
+    "userId": 2,
+    "username": "User",
+    "text": "nice"
+  },
+  {
+    "id": 2,
+    "productId": "1",
+    "userId": 2,
+    "username": "User",
+    "text": "Nice"
+  },
+  {
+    "id": 3,
+    "productId": "1",
+    "userId": 3,
+    "username": "User2",
+    "text": "Notb bad"
+  },
+  {
+    "id": 4,
+    "productId": "2",
+    "userId": 2,
+    "username": "User1",
+    "text": "worst"
+  },
+  {
+    "id": 5,
+    "productId": "5",
+    "userId": 2,
+    "username": "User1",
+    "text": "Nice product"
+  },
+  {
+    "id": 6,
+    "productId": "5",
+    "userId": 2,
+    "username": "User1",
+    "text": "Worst"
+  },
+  {
+    "id": 7,
+    "productId": "5",
+    "userId": 2,
+    "username": "User1",
+    "text": "It is good"
+  },
+  {
+    "id": 8,
+    "productId": "5",
+    "userId": 2,
+    "username": "User1",
+    "text": "It is excellent"
+  }
+]
