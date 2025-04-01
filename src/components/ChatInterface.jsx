@@ -1,14 +1,14 @@
 import React, { useState } from 'react';
 import axios from 'axios';
 
-const ChatInterface = ({ pdfUrl }) => {
+const ChatInterface = ({ uploadedResumes }) => {
     const [message, setMessage] = useState('');
     const [chatHistory, setChatHistory] = useState([]);
 
     const handleSendMessage = async (e) => {
         e.preventDefault();
         try {
-            const response = await axios.post(' http://localhost:5000/api/chat', { message, pdfUrl });
+            const response = await axios.post('http://localhost:5000/api/chat', { message, uploadedResumes });
             setChatHistory([...chatHistory, { user: message, bot: response.data.reply }]);
             setMessage('');
         } catch (err) {
@@ -17,9 +17,8 @@ const ChatInterface = ({ pdfUrl }) => {
     };
 
     return (
-        <div className=" flex flex-col h-screen/85 w-screen/47 ">
-            {/* <h2 className="text-2xl font-bold text-gray-800 mb-6">Chat with PDF</h2> */}
-            <div className="flex-1 overflow-y-auto mb-6 p-4 bg-white rounded-lg shadow-inner ">
+        <div className="flex flex-col h-screen/85 w-screen/47">
+            <div className="flex-1 overflow-y-auto mb-6 p-4 bg-white rounded-lg shadow-inner">
                 {chatHistory.map((chat, index) => (
                     <div key={index} className="mb-4">
                         <p className="text-sm text-gray-600"><strong>You:</strong> {chat.user}</p>

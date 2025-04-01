@@ -1,212 +1,144 @@
-const express = require('express');
-const axios = require('axios');
-const cheerio = require('cheerio');
-const fs = require('fs');
-const PDFDocument = require('pdfkit');
-const path = require('path');
-const cors = require("cors");
-const pdfParse = require('pdf-parse');
-process.env.NODE_TLS_REJECT_UNAUTHORIZED = "0";
+    const express = require('express');
+    const multer = require('multer');
+    const path = require('path');
+    const fs = require('fs');
+    const pdfParse = require('pdf-parse');
+    const cors = require('cors');
+    const mammoth = require('mammoth');
+    const axios=require('axios')
+    const app = express();
+    const PORT = 5000;
 
-const app = express();
-const PORT = 5000;
-const visitedURLs = new Set();
-const blockedDomains = ['facebook.com', 'twitter.com', 'linkedin.com', 'instagram.com', 'youtube.com', 't.me', 'whatsapp.com'];
-const delay = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
+    app.use(express.json());
+    app.use(cors());
+    app.use('/uploads', express.static(path.join(__dirname, 'uploads')));
+    const extractTextFromPDF = async (filePath) => {
+        const fileBuffer = fs.readFileSync(filePath);
+        const pdfData = await pdfParse(fileBuffer);
+        return pdfData.text;
+    };
 
-app.use(express.json());
-app.use(cors());
-
-const MAX_DEPTH = 2; // Restrict crawling depth
-
-// Function to extract meaningful text from a page
-async function scrapeEntirePage(url) {
-    try {
-        const response = await axios.get(url, { responseType: 'arraybuffer' });
-        const contentType = response.headers['content-type'];
-
-        if (contentType && contentType.includes('text')) {
-            const decodedContent = response.data.toString('utf8');
-            const $ = cheerio.load(decodedContent);
-            let content = `\n\n===== ${url} =====\n\n`;
-
-            $('h1, h2, h3, h4, h5, h6, p, li').each((i, elem) => {
-                let text = $(elem).text().trim();
-                if (text.length > 10) {
-                    content += text + '\n\n';
-                }
-            });
-
-            console.log(`✅ Extracted clean text from: ${url}`);
-            return content;
-        } else {
-            console.warn(`⚠️ Skipping non-text content at ${url}`);
-            return '';
+    // Function to extract text from a DOCX file
+    const extractTextFromDOCX = async (filePath) => {
+        const fileBuffer = fs.readFileSync(filePath);
+        const docxData = await mammoth.extractRawText({ buffer: fileBuffer });
+        return docxData.value;
+    };
+    // Configure Multer storage
+  // Configure Multer storage to keep the original file name
+const storage = multer.diskStorage({
+    destination: (req, file, cb) => {
+        const uploadDir = path.join(__dirname, 'uploads');
+        if (!fs.existsSync(uploadDir)) {
+            fs.mkdirSync(uploadDir);
         }
-    } catch (error) {
-        console.error(`❌ Error extracting text from ${url}:`, error.message);
-        return '';
+        cb(null, uploadDir);
+    },
+    filename: (req, file, cb) => {
+        cb(null, file.originalname); // Use the original filename to save the file
     }
-}
+});
 
-// Function to extract internal links
-async function extractLinks(url) {
-    try {
-        const response = await axios.get(url);
-        const $ = cheerio.load(response.data);
-        let links = [];
 
-        $('a').each((i, elem) => {
-            const link = $(elem).attr('href');
-            if (link && !link.startsWith('#')) {
-                const absoluteUrl = link.startsWith('http') ? link : new URL(link, url).href;
-                if (!blockedDomains.some(domain => absoluteUrl.includes(domain))) {
-                    links.push(absoluteUrl);
+    const upload = multer({ storage });
+
+    // Resume Upload API
+    app.post('/api/upload-resumes', upload.array('resumes', 10), async (req, res) => {
+        if (!req.files || req.files.length === 0) {
+            return res.status(400).json({ error: 'No files uploaded' });
+        }
+    
+        try {
+            let extractedTexts = [];
+    
+            for (const file of req.files) {
+                const filePath = file.path;
+                const pdfData = await pdfParse(fs.readFileSync(filePath));
+    
+                // Return the file's URL with the correct filename and extracted text
+                extractedTexts.push({
+                    fileUrl: `http://localhost:${PORT}/uploads/${file.originalname}`, // Use original filename in the URL
+                    extractedText: pdfData.text
+                });
+            }
+    
+            res.json({
+                message: 'Resumes uploaded successfully',
+                files: extractedTexts
+            });
+        } catch (error) {
+            console.error('Error processing resumes:', error);
+            res.status(500).json({ error: 'Failed to process the resumes' });
+        }
+    });
+    
+
+    // Chat API for resume analysis
+    app.post('/api/chat', async (req, res) => {
+        const { message, uploadedResumes } = req.body;
+
+        if (!message || !uploadedResumes || uploadedResumes.length === 0) {
+            return res.status(400).json({ error: 'Message or uploaded resumes are missing.' });
+        }
+
+        try {
+            // Process uploaded resumes
+            let resumeTexts = [];
+            for (let fileUrl of uploadedResumes) {
+                const filePath = path.join(__dirname, 'uploads', fileUrl.split('/').pop());
+
+                // Check the file extension and extract the text accordingly
+                if (fileUrl.endsWith('.pdf')) {
+                    const pdfText = await extractTextFromPDF(filePath);
+                    resumeTexts.push(pdfText);
+                } else if (fileUrl.endsWith('.docx')) {
+                    const docxText = await extractTextFromDOCX(filePath);
+                    resumeTexts.push(docxText);
                 }
             }
-        });
-        return [...new Set(links)];
-    } catch (error) {
-        console.error(`❌ Error extracting links from ${url}:`, error.message);
-        return [];
-    }
-}
 
-// Function to save text content to a PDF
-function saveTextToPDF(content, fileName) {
-    const publicDir = path.join(__dirname, 'public');
+            // Concatenate all extracted texts from resumes
+            const resumesContent = resumeTexts.join('\n');
 
-    // Ensure the 'public' directory exists
-    if (!fs.existsSync(publicDir)) {
-        fs.mkdirSync(publicDir);
-    }
+            // Now, process the message with the extracted resume content
+            const responseFromModel = await analysis(message, resumesContent);
 
-    const filePath = path.join(publicDir, fileName);
-    const doc = new PDFDocument({ margin: 30 });
-    const stream = fs.createWriteStream(filePath);
-    doc.pipe(stream);
-    
-    doc.fontSize(18).text('Extracted Website Content', { align: 'center' });
-    doc.moveDown(2);
-
-    content.split('\n').forEach(line => {
-        if (line.trim()) {
-            doc.fontSize(12).text(line, { align: 'left' });
+            res.json({
+                message: 'Chat response generated successfully',
+                reply: responseFromModel,
+            });
+        } catch (error) {
+            console.error('Error processing chat:', error);
+            res.status(500).json({ error: 'Error processing chat message' });
         }
     });
 
-    doc.end();
-    return filePath;
-}
 
+    app.delete('/api/delete-resume', async (req, res) => {
+        const fileUrl = req.query.fileUrl;
+        if (!fileUrl) {
+            return res.status(400).json({ error: 'File URL is required' });
+        }
 
-// Crawl function with depth restriction
-async function crawlPage(url, depth = 0) {
-    if (visitedURLs.has(url) || depth > MAX_DEPTH) return ''; // Stop if max depth reached
-    visitedURLs.add(url);
+        const filePath = path.join(__dirname, 'uploads', path.basename(fileUrl));
 
-    console.log(`🔍 Crawling (Depth: ${depth}): ${url}`);
-
-    const pageText = await scrapeEntirePage(url);
-    const links = await extractLinks(url);
-
-    if (depth < MAX_DEPTH) {
-        const subLinkTexts = await Promise.all(
-            links.map(async (link) => {
-                await delay(500);
-                return await crawlPage(link, depth + 1); // Increase depth
-            })
-        );
-        return pageText + subLinkTexts.join('');
-    }
-
-    return pageText;
-}
-
-// API Endpoint to scrape and generate PDF
-app.post('/api/scrape', async (req, res) => {
-    const { url } = req.body;
-    if (!url) return res.status(400).json({ error: 'URL parameter is required' });
-
-    visitedURLs.clear();
-    const textData = await crawlPage(url, 0); // Start at depth 0
-    const pdfFileName = `scraped_content_${Date.now()}.pdf`;
-    const filePath = saveTextToPDF(textData, pdfFileName);
-    res.json({ 
-        success: true, 
-        downloadURL: `http://localhost:5000/download/${pdfFileName}` // Change URL if deployed
+        try {
+            if (fs.existsSync(filePath)) {
+                fs.unlinkSync(filePath);
+                return res.json({ message: 'Resume deleted successfully' });
+            } else {
+                return res.status(404).json({ error: 'File not found' });
+            }
+        } catch (error) {
+            console.error('Error deleting file:', error);
+            return res.status(500).json({ error: 'Failed to delete the resume' });
+        }
     });
-    // res.json({ message: 'Scraping completed', downloadURL: `/download/${pdfFileName}` });
-});
+    // Start server
+    app.listen(PORT, () => {
+        console.log(`🚀 Server is running on http://localhost:${PORT}`);
+    });
 
-// User Authentication (Sample JSON File-Based)
-const usersFilePath = path.join(__dirname, "utils/users.json");
-
-// Function to read JSON users
-const readJSON = (filePath) => {
-    try {
-        return JSON.parse(fs.readFileSync(filePath, "utf8"));
-    } catch (error) {
-        console.error(`Error reading file: ${filePath}`, error);
-        return [];
-    }
-};
-
-// Login API
-app.post("/login", (req, res) => {
-    const { email, password } = req.body;
-    const users = readJSON(usersFilePath);
-
-    const user = users.find((u) => u.email === email && u.password === password);
-    if (!user) return res.status(401).json({ error: "Invalid credentials" });
-
-    res.json({ message: "Login successful", role: user.role, userId: user.id, username: user.name, userEmail: user.email });
-});
-
-// File Download API
-app.get('/download/:filename', (req, res) => {
-    const { filename } = req.params;
-    const filePath = path.join(__dirname, 'public', filename);
-
-    if (fs.existsSync(filePath)) {
-        res.setHeader('Content-Type', 'application/pdf');
-        res.setHeader('Content-Disposition', 'inline'); // This allows it to be viewed in iframe
-        res.sendFile(filePath);
-    } else {
-        res.status(404).json({ error: 'File not found' });
-    }
-});
-app.post('/api/chat', async (req, res) => {
-    const { message, pdfUrl } = req.body;
-
-    if (!pdfUrl) {
-        return res.status(400).json({ error: "PDF URL is required" });
-    }
-
-    try {
-        // Fetch the PDF file from the given URL
-        const response = await axios.get(pdfUrl, { responseType: 'arraybuffer' });
-
-        // Convert PDF Buffer into text
-        const pdfData = await pdfParse(response.data);
-        const pdfText = pdfData.text;
-
-// console.log(pdfText)
-      var llmresponse=await analysis(message,pdfText)
-console.log(JSON.parse(llmresponse))
-let final=JSON.parse(llmresponse)
-        res.json({reply: final.answer});
-
-    } catch (error) {
-        console.error('Error processing PDF:', error.message);
-        res.status(500).json({ error: 'Failed to process the PDF.' });
-    }
-});
-
-// Start Server
-app.listen(PORT, () => {
-    console.log(`🚀 Server is running on http://localhost:${PORT}`);
-});
 async function analysis(question,pdfContent) {
     console.log(pdfContent)
     return new Promise((resolve, reject) => {
@@ -217,7 +149,7 @@ async function analysis(question,pdfContent) {
                         "role": "user",
                         "parts": [
                             {
-                              "text": `PDF Content ${pdfContent} user QUERY:${question}`
+                              "text": `Resumes List: ${pdfContent} user QUERY:${question}`
                             }]
                     }
                 ],
@@ -225,7 +157,7 @@ async function analysis(question,pdfContent) {
                     "role": "user",
                     "parts": [
                       {
-                        "text":"You are an ai assistant to analyze the given Input PDF Content and answer the user query and your reponse should be in the below format {answer:answer} Note:check the pdf content carefully"
+                        "text":"You are an ai assistant to analyze resumes list and give the matched resumes  to user  based on user QUERY just give the resume names and why he is matched and his skills  "
                       }
                     ]
                 },

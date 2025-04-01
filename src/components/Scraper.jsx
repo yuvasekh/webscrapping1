@@ -1,80 +1,101 @@
 import React, { useState } from 'react';
 import axios from 'axios';
-import PDFViewer from './PDFViewer';
 import ChatInterface from './ChatInterface';
 
-const ScraperAndChat = () => {
-    const [url, setUrl] = useState('');
-    const [pdfUrl, setPdfUrl] = useState('');
-    const [error, setError] = useState('');
-    const [scrapedUrl, setScrapedUrl] = useState(''); // Store the scraped URL
+const ResumeAnalysis = () => {
+    const [resumes, setResumes] = useState([]);
+    const [uploadedResumes, setUploadedResumes] = useState([]);
 
-    const handleScrape = async (e) => {
+    const handleResumeUpload = async (e) => {
         e.preventDefault();
+        if (resumes.length === 0) return;
+        
+        const formData = new FormData();
+        resumes.forEach((resume) => {
+            formData.append('resumes', resume);
+        });
+
         try {
-            const response = await axios.post('http://localhost:5000/api/scrape', { url });
-            if (response.data.success) {
-                setPdfUrl(response.data.downloadURL); // Set the PDF URL for preview
-                setScrapedUrl(url); // Save the entered URL
-                setError('');
-            } else {
-                setError('Failed to scrape the website.');
-            }
+            const response = await axios.post('http://localhost:5000/api/upload-resumes', formData, {
+                headers: { 'Content-Type': 'multipart/form-data' }
+            });
+            setUploadedResumes(response.data.files);
+            alert(response.data.message);
         } catch (err) {
-            setError('An error occurred. Please try again.');
+            alert('Error uploading resumes.');
+        }
+    };
+
+    const handleDeleteResume = async (fileUrl) => {
+        try {
+            await axios.delete(`http://localhost:5000/api/delete-resume?fileUrl=${encodeURIComponent(fileUrl)}`);
+            setUploadedResumes(uploadedResumes.filter(resume => resume.fileUrl !== fileUrl));
+        } catch (err) {
+            alert('Error deleting resume.');
         }
     };
 
     return (
         <div className="min-h-screen flex bg-gray-100 w-[100vw]">
-            {/* Left Side: Scraper and PDF Viewer */}
             <div className="flex-1 p-6 bg-white shadow-lg">
-                <h1 className="text-2xl font-bold text-gray-800 mb-6">Web Scraper</h1>
-                <form onSubmit={handleScrape} className="mb-6">
-                    <div className="flex">
-                        <input
-                            type="url"
-                            placeholder="Enter URL"
-                            value={url}
-                            onChange={(e) => setUrl(e.target.value)}
-                            className="flex-1 px-4 py-2 border border-gray-300 rounded-l-md focus:outline-none focus:ring-2 focus:ring-blue-500"
-                            required
-                        />
-                        <button
-                            type="submit"
-                            className="bg-blue-600 text-white px-6 py-2 rounded-r-md hover:bg-blue-700 focus:outline-none focus:ring-2 focus:ring-blue-500"
-                        >
-                            Scrape
-                        </button>
-                    </div>
+                <h1 className="text-2xl font-bold text-gray-800 mb-6">Resume Analysis</h1>
+                
+                {/* Resume Upload Section */}
+                <form onSubmit={handleResumeUpload} className="mt-6">
+                    <h2 className="text-xl font-semibold text-gray-800 mb-4">Upload Resumes</h2>
+                    <input 
+                        type="file" 
+                        accept=".pdf,.doc,.docx" 
+                        multiple
+                        onChange={(e) => setResumes(Array.from(e.target.files))} 
+                        className="border border-gray-300 px-4 py-2 rounded-md w-full mb-4"
+                    />
+                    <button
+                        type="submit"
+                        className="bg-green-600 text-white px-6 py-2 rounded-md hover:bg-green-700 focus:outline-none focus:ring-2 focus:ring-green-500"
+                    >
+                        Upload Resumes
+                    </button>
                 </form>
 
-                {error && <p className="text-red-500 text-sm mb-4">{error}</p>}
-
-                {pdfUrl && (
-                    <div className="mt-4 p-4 border rounded-md bg-gray-50">
-                        <p className="text-sm text-gray-600">
-                            <strong>Scraped URL:</strong> 
-                            <a href={scrapedUrl} target="_blank" rel="noopener noreferrer" className="text-blue-500 hover:underline">
-                                {scrapedUrl}
-                            </a>
-                        </p>
-                        <iframe 
-                src={pdfUrl} 
-                className="w-full h-[500px] border rounded-md"
-                title="Scraped PDF"
-            />
+                {/* Uploaded Resumes List */}
+                {uploadedResumes.length > 0 && (
+                    <div className="mt-6">
+                        <h2 className="text-xl font-semibold text-gray-800 mb-4">Uploaded Resumes</h2>
+                        <ul className="border border-gray-200 rounded-md p-4">
+                            {uploadedResumes.map((resume, index) => (
+                                <li key={index} className="flex justify-between items-center mb-2 p-2 bg-gray-100 rounded-md">
+                                    <a 
+                                        href={resume.fileUrl} 
+                                        target="_blank" 
+                                        rel="noopener noreferrer" 
+                                        className="text-blue-600 hover:underline"
+                                        onClick={(e) => {
+                                            e.preventDefault();
+                                            handleDeleteResume(resume.fileUrl);
+                                        }}
+                                    >
+                                        {resume.fileUrl.split('/').pop()}
+                                    </a>
+                                    <button 
+                                        onClick={() => handleDeleteResume(resume.fileUrl)}
+                                        className="ml-4 bg-red-500 text-white px-3 py-1 rounded-md hover:bg-red-600"
+                                    >
+                                        Delete
+                                    </button>
+                                </li>
+                            ))}
+                        </ul>
                     </div>
                 )}
             </div>
 
-            {/* Right Side: Chat Interface */}
             <div className="flex-1 bg-gray-50">
-          
-                <ChatInterface pdfUrl={pdfUrl} />
+            <ChatInterface uploadedResumes={uploadedResumes.map(resume => resume.fileUrl)} />
+
             </div>
         </div>
     );
 };
 
-export default ScraperAndChat;
+export default ResumeAnalysis;
